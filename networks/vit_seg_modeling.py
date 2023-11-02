@@ -440,6 +440,8 @@ class VisionTransformer(nn.Module):
                         unit.load_from(res_weight, n_block=bname, n_unit=uname)
 
 CONFIGS = {
+    'ViT-ti_16': configs.get_ti16_config(),
+    'ViT-s_16': configs.get_s16_config(),
     'ViT-B_16': configs.get_b16_config(),
     'ViT-B_32': configs.get_b32_config(),
     'ViT-L_16': configs.get_l16_config(),
