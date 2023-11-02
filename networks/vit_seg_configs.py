@@ -1,5 +1,52 @@
 import ml_collections
 
+def get_ti16_config():
+  """Returns the ViT-Ti/16 configuration."""
+  config = ml_collections.ConfigDict()
+  config.model_name = 'ViT-Ti_16'
+  config.patches = ml_collections.ConfigDict({'size': (16, 16)})
+  config.hidden_size = 192
+  config.transformer = ml_collections.ConfigDict()
+  config.transformer.mlp_dim = 768
+  config.transformer.num_heads = 3
+  config.transformer.num_layers = 12
+  config.transformer.attention_dropout_rate = 0.0
+  config.transformer.dropout_rate = 0.0
+  config.classifier = 'token'
+  config.representation_size = None
+
+  config.pretrained_path = '../model/vit_checkpoint/imagenet21k/ViT-ti_16.npz'
+  config.patch_size = 16
+
+  config.decoder_channels = (256, 128, 64, 16)
+  config.n_classes = 2
+  config.activation = 'softmax'
+  return config
+  return config
+
+
+def get_s16_config():
+  """Returns the ViT-S/16 configuration."""
+  config = ml_collections.ConfigDict()
+  config.model_name = 'ViT-S_16'
+  config.patches = ml_collections.ConfigDict({'size': (16, 16)})
+  config.hidden_size = 384
+  config.transformer = ml_collections.ConfigDict()
+  config.transformer.mlp_dim = 1536
+  config.transformer.num_heads = 6
+  config.transformer.num_layers = 12
+  config.transformer.attention_dropout_rate = 0.0
+  config.transformer.dropout_rate = 0.0
+  config.classifier = 'token'
+  config.representation_size = None
+  config.pretrained_path = '../model/vit_checkpoint/imagenet21k/ViT-s_16.npz'
+  config.patch_size = 16
+
+  config.decoder_channels = (256, 128, 64, 16)
+  config.n_classes = 2
+  config.activation = 'softmax'
+  return config
+
 def get_b16_config():
     """Returns the ViT-B/16 configuration."""
     config = ml_collections.ConfigDict()
