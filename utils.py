@@ -5,6 +5,79 @@ from scipy.ndimage import zoom
 import torch.nn as nn
 import SimpleITK as sitk
 
+class SegmentationMetric(object):
+    '''
+    imgLabel [batch_size, height(144), width(256)]
+    confusionMatrix [[0(TN),1(FP)],
+                     [2(FN),3(TP)]]
+    '''
+    def __init__(self, numClass):
+        self.numClass = numClass
+        self.confusionMatrix = np.zeros((self.numClass,)*2)
+
+    def pixelAccuracy(self):
+        # return all class overall pixel accuracy
+        # acc = (TP + TN) / (TP + TN + FP + TN)
+        acc = np.diag(self.confusionMatrix).sum() /  self.confusionMatrix.sum()
+        return acc
+        
+    def lineAccuracy(self):
+        Acc = np.diag(self.confusionMatrix) / (self.confusionMatrix.sum(axis=1) + 1e-12)
+        return Acc[1]
+
+    def classPixelAccuracy(self):
+        # return each category pixel accuracy(A more accurate way to call it precision)
+        # acc = (TP) / TP + FP
+        classAcc = np.diag(self.confusionMatrix) / (self.confusionMatrix.sum(axis=0) + 1e-12)
+        return classAcc
+
+    def meanPixelAccuracy(self):
+        classAcc = self.classPixelAccuracy()
+        meanAcc = np.nanmean(classAcc)
+        return meanAcc
+
+    def meanIntersectionOverUnion(self):
+        # Intersection = TP Union = TP + FP + FN
+        # IoU = TP / (TP + FP + FN)
+        intersection = np.diag(self.confusionMatrix)
+        union = np.sum(self.confusionMatrix, axis=1) + np.sum(self.confusionMatrix, axis=0) - np.diag(self.confusionMatrix)
+        IoU = intersection / union
+        IoU[np.isnan(IoU)] = 0
+        mIoU = np.nanmean(IoU)
+        return mIoU
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count if self.count != 0 else 0
+
+    def IntersectionOverUnion(self):
+        intersection = np.diag(self.confusionMatrix)
+        union = np.sum(self.confusionMatrix, axis=1) + np.sum(self.confusionMatrix, axis=0) - np.diag(self.confusionMatrix)
+        IoU = intersection / union
+        IoU[np.isnan(IoU)] = 0
+        return IoU[1]
+
+    def genConfusionMatrix(self, imgPredict, imgLabel):
+        # remove classes from unlabeled pixels in gt image and predict
+        # print(imgLabel.shape)
+        mask = (imgLabel >= 0) & (imgLabel < self.numClass)
+        label = self.numClass * imgLabel[mask] + imgPredict[mask]
+        count = np.bincount(label, minlength=self.numClass**2)
+        confusionMatrix = count.reshape(self.numClass, self.numClass)
+        return confusionMatrix
 
 class DiceLoss(nn.Module):
     def __init__(self, n_classes):
@@ -57,6 +130,74 @@ def calculate_metric_percase(pred, gt):
     else:
         return 0, 0
 
+@torch.no_grad()
+def val(val_loader, model):
+
+    model.eval()
+
+
+    DA=SegmentationMetric(2)
+    LL=SegmentationMetric(2)
+
+    da_acc_seg = AverageMeter()
+    da_IoU_seg = AverageMeter()
+    da_mIoU_seg = AverageMeter()
+
+    ll_acc_seg = AverageMeter()
+    ll_IoU_seg = AverageMeter()
+    ll_mIoU_seg = AverageMeter()
+    total_batches = len(val_loader)
+    
+    total_batches = len(val_loader)
+    pbar = enumerate(val_loader)
+    pbar = tqdm(pbar, total=total_batches)
+    for i, (_,input, target) in pbar:
+        input = input.cuda().float() / 255.0
+            # target = target.cuda()
+
+        input_var = input
+        target_var = target
+
+        # run the mdoel
+        with torch.no_grad():
+            output = model(input_var)
+
+        out_da,out_ll=output
+        target_da,target_ll=target
+
+        _,da_predict=torch.max(out_da, 1)
+        _,da_gt=torch.max(target_da, 1)
+
+        _,ll_predict=torch.max(out_ll, 1)
+        _,ll_gt=torch.max(target_ll, 1)
+        DA.reset()
+        DA.addBatch(da_predict.cpu(), da_gt.cpu())
+
+
+        da_acc = DA.pixelAccuracy()
+        da_IoU = DA.IntersectionOverUnion()
+        da_mIoU = DA.meanIntersectionOverUnion()
+
+        da_acc_seg.update(da_acc,input.size(0))
+        da_IoU_seg.update(da_IoU,input.size(0))
+        da_mIoU_seg.update(da_mIoU,input.size(0))
+
+
+        LL.reset()
+        LL.addBatch(ll_predict.cpu(), ll_gt.cpu())
+
+
+        ll_acc = LL.pixelAccuracy()
+        ll_IoU = LL.IntersectionOverUnion()
+        ll_mIoU = LL.meanIntersectionOverUnion()
+
+        ll_acc_seg.update(ll_acc,input.size(0))
+        ll_IoU_seg.update(ll_IoU,input.size(0))
+        ll_mIoU_seg.update(ll_mIoU,input.size(0))
+
+    da_segment_result = (da_acc_seg.avg,da_IoU_seg.avg,da_mIoU_seg.avg)
+    ll_segment_result = (ll_acc_seg.avg,ll_IoU_seg.avg,ll_mIoU_seg.avg)
+    return da_segment_result,ll_segment_result
 
 def test_single_volume(image, label, net, classes, patch_size=[256, 256], test_save_path=None, case=None, z_spacing=1):
     image, label = image.squeeze(0).cpu().detach().numpy(), label.squeeze(0).cpu().detach().numpy()
