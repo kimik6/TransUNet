@@ -4,6 +4,7 @@ from medpy import metric
 from scipy.ndimage import zoom
 import torch.nn as nn
 import SimpleITK as sitk
+from tqdm import tqdm
 
 class SegmentationMetric(object):
     '''
@@ -45,7 +46,38 @@ class SegmentationMetric(object):
         IoU[np.isnan(IoU)] = 0
         mIoU = np.nanmean(IoU)
         return mIoU
+    def IntersectionOverUnion(self):
+        intersection = np.diag(self.confusionMatrix)
+        union = np.sum(self.confusionMatrix, axis=1) + np.sum(self.confusionMatrix, axis=0) - np.diag(self.confusionMatrix)
+        IoU = intersection / union
+        IoU[np.isnan(IoU)] = 0
+        return IoU[1]
 
+    def genConfusionMatrix(self, imgPredict, imgLabel):
+        # remove classes from unlabeled pixels in gt image and predict
+        # print(imgLabel.shape)
+        mask = (imgLabel >= 0) & (imgLabel < self.numClass)
+        label = self.numClass * imgLabel[mask] + imgPredict[mask]
+        count = np.bincount(label, minlength=self.numClass**2)
+        confusionMatrix = count.reshape(self.numClass, self.numClass)
+        return confusionMatrix
+
+    def Frequency_Weighted_Intersection_over_Union(self):
+        # FWIOU =     [(TP+FN)/(TP+FP+TN+FN)] *[TP / (TP + FP + FN)]
+        freq = np.sum(self.confusionMatrix, axis=1) / np.sum(self.confusionMatrix)
+        iu = np.diag(self.confusionMatrix) / (
+                np.sum(self.confusionMatrix, axis=1) + np.sum(self.confusionMatrix, axis=0) -
+                np.diag(self.confusionMatrix))
+        FWIoU = (freq[freq > 0] * iu[freq > 0]).sum()
+        return FWIoU
+
+    def addBatch(self, imgPredict, imgLabel):
+        assert imgPredict.shape == imgLabel.shape
+        self.confusionMatrix += self.genConfusionMatrix(imgPredict, imgLabel)
+
+    def reset(self):
+        self.confusionMatrix = np.zeros((self.numClass, self.numClass))
+        
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -241,3 +273,10 @@ def test_single_volume(image, label, net, classes, patch_size=[256, 256], test_s
         sitk.WriteImage(img_itk, test_save_path + '/'+ case + "_img.nii.gz")
         sitk.WriteImage(lab_itk, test_save_path + '/'+ case + "_gt.nii.gz")
     return metric_list
+
+
+def save_checkpoint(state, filenameCheckpoint='checkpoint.pth.tar'):
+    torch.save(state, filenameCheckpoint)
+
+def netParams(model):
+    return np.sum([np.prod(parameter.size()) for parameter in model.parameters()])
