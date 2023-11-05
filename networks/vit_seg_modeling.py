@@ -43,8 +43,10 @@ def np2th(weights, conv=False):
 def swish(x):
     return x * torch.sigmoid(x)
 
-
-ACT2FN = {"gelu": torch.nn.functional.gelu, "relu": torch.nn.functional.relu, "swish": swish}
+@torch.jit.script
+def gelu(x):
+    return x*0.5*(1.0+torch.erf(x / 1.41421))
+ACT2FN = {"gelu": gelu, "relu": torch.nn.functional.relu, "swish": swish}
 
 
 class Attention(nn.Module):
