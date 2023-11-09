@@ -147,7 +147,7 @@ class MyDataset(torch.utils.data.Dataset):
         if self.transform is not None :
             image = self.transform(image)
           
-        return image_name,torch.from_numpy(image),(seg_da,seg_ll)
+        return image_name,image,(seg_da,seg_ll)
 
 class My_batch_Dataset(torch.utils.data.Dataset):
     '''
